@@ -1,0 +1,2 @@
+# NSE-MCP-TradeAnalyser
+Trade
