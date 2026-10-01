@@ -1,0 +1,57 @@
+[
+ {
+  "id": "7dac08265c",
+  "symbol": "CUPID",
+  "as_of": "2026-09-30",
+  "entry": 311.65,
+  "stop_loss": 251.3,
+  "target": 432.35,
+  "score": "4/4",
+  "logged_at": "2026-10-01T15:35:50",
+  "taken": false
+ },
+ {
+  "id": "48aea7bc30",
+  "symbol": "SYRMA",
+  "as_of": "2026-09-30",
+  "entry": 1782.9,
+  "stop_loss": 1598.46,
+  "target": 2151.77,
+  "score": "4/4",
+  "logged_at": "2026-10-01T15:35:50",
+  "taken": false
+ },
+ {
+  "id": "fb7ad7c9c7",
+  "symbol": "AZAD",
+  "as_of": "2026-09-30",
+  "entry": 2963.2,
+  "stop_loss": 2605.3,
+  "target": 3679.0,
+  "score": "4/4",
+  "logged_at": "2026-10-01T15:35:50",
+  "taken": false
+ },
+ {
+  "id": "c4b0660678",
+  "symbol": "KOTAKBANK",
+  "as_of": "2026-09-30",
+  "entry": 417.0,
+  "stop_loss": 401.55,
+  "target": 447.9,
+  "score": "3/4",
+  "logged_at": "2026-10-01T15:35:50",
+  "taken": false
+ },
+ {
+  "id": "bb9c3769af",
+  "symbol": "MCX",
+  "as_of": "2026-09-30",
+  "entry": 3300.4,
+  "stop_loss": 3209.0,
+  "target": 3483.2,
+  "score": "3/4",
+  "logged_at": "2026-10-01T15:35:50",
+  "taken": false
+ }
+]

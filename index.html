@@ -1,0 +1,786 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>NSE MCP Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0d131a;
+    --side: #111a23;
+    --panel: #151f2a;
+    --field: #0b1118;
+    --border: #233242;
+    --text: #e4ebf2;
+    --muted: #8596a6;
+    --accent: #3fb984;   /* gains / long */
+    --accent2: #5b8def;  /* primary actions */
+    --danger: #ef5a5a;
+    --warn: #e8b84b;
+    --topbar-h: 52px;
+    --side-w: 340px;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body { margin: 0; font-family: "Segoe UI", -apple-system, Roboto, sans-serif; background: var(--bg); color: var(--text); font-size: 14px; font-variant-numeric: tabular-nums; }
+  :focus-visible { outline: 2px solid var(--accent2); outline-offset: 2px; }
+
+  /* ---- top bar ---- */
+  .topbar { height: var(--topbar-h); display: flex; align-items: center; gap: 28px; padding: 0 20px; background: var(--side); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 10; }
+  .brand { font-size: 15px; font-weight: 650; white-space: nowrap; }
+  .brand small { color: var(--muted); font-weight: 400; margin-left: 8px; font-size: 12px; }
+  .tabs { display: flex; gap: 2px; height: 100%; }
+  .tab { display: flex; align-items: center; padding: 0 14px; cursor: pointer; color: var(--muted); font-size: 13.5px; border-bottom: 2px solid transparent; }
+  .tab:hover { color: var(--text); }
+  .tab.active { color: var(--text); border-bottom-color: var(--accent2); }
+
+  /* ---- shell: sidebar + main ---- */
+  .view { display: none; }
+  .view.active { display: block; }
+  .layout { display: grid; grid-template-columns: var(--side-w) minmax(0, 1fr); min-height: calc(100vh - var(--topbar-h)); }
+  .sidebar { background: var(--side); border-right: 1px solid var(--border); padding: 4px 0 28px; position: sticky; top: var(--topbar-h); align-self: start; height: calc(100vh - var(--topbar-h)); overflow-y: auto; }
+  .side-section { padding: 16px 20px; border-bottom: 1px solid var(--border); }
+  .side-section:last-child { border-bottom: none; }
+  .main { padding: 20px 28px 60px; min-width: 0; }
+  @media (max-width: 900px) {
+    .layout { grid-template-columns: 1fr; }
+    .sidebar { position: static; height: auto; border-right: none; border-bottom: 1px solid var(--border); }
+    .main { padding: 16px; }
+    .topbar { gap: 12px; padding: 0 12px; overflow-x: auto; }
+    .brand small { display: none; }
+  }
+
+  h2 { font-size: 13px; font-weight: 650; color: var(--text); margin: 0 0 10px; }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 18px; }
+  .panel h2 { color: var(--muted); }
+
+  /* ---- form controls ---- */
+  select, textarea, input[type=text], input[type=number], button {
+    width: 100%; background: var(--field); border: 1px solid var(--border); color: var(--text);
+    border-radius: 6px; padding: 8px 10px; font-size: 13px; font-family: inherit;
+  }
+  input:focus, select:focus, textarea:focus { border-color: var(--accent2); outline: none; }
+  textarea { min-height: 110px; resize: vertical; font-family: ui-monospace, Consolas, monospace; }
+  label { display: block; font-size: 12px; color: var(--muted); margin: 12px 0 4px; }
+  label:first-of-type { margin-top: 0; }
+  .tool-desc { font-size: 12px; color: var(--muted); margin-top: 6px; line-height: 1.45; }
+  .hint { font-size: 12px; color: var(--muted); margin-top: 6px; line-height: 1.45; }
+
+  button.primary { margin-top: 14px; background: var(--accent2); border-color: var(--accent2); color: #fff; font-weight: 600; cursor: pointer; padding: 9px 10px; }
+  button.primary:hover { filter: brightness(1.08); }
+  button.primary:disabled { opacity: .5; cursor: not-allowed; }
+  button.secondary { background: transparent; border: 1px dashed var(--border); color: var(--muted); cursor: pointer; margin-top: 4px; }
+  button.secondary:hover { color: var(--text); border-color: var(--muted); }
+
+  .status { font-size: 12px; margin-top: 10px; color: var(--muted); line-height: 1.4; }
+  .status.error { color: var(--danger); }
+
+  /* ---- tables / output ---- */
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  th, td { text-align: left; padding: 7px 12px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  th { color: var(--muted); font-weight: 600; position: sticky; top: 0; background: var(--panel); }
+  td:not(:first-child), th:not(:first-child) { text-align: right; }
+  tr:hover td { background: rgba(255,255,255,0.025); }
+  pre { white-space: pre-wrap; word-break: break-word; font-size: 12px; background: var(--field); padding: 12px; border-radius: 6px; border: 1px solid var(--border); max-height: 65vh; overflow: auto; }
+  .result-scroll { max-height: 65vh; overflow: auto; border: 1px solid var(--border); border-radius: 6px; }
+  .empty { color: var(--muted); font-size: 13px; padding: 48px 20px; text-align: center; line-height: 1.6; }
+
+  /* ---- stock input rows (sidebar) ---- */
+  .stock-row { display: grid; grid-template-columns: 1fr auto; gap: 6px; align-items: center; }
+  .stock-row button { width: auto; padding: 8px 10px; background: transparent; border: 1px solid var(--border); color: var(--muted); cursor: pointer; }
+  .stock-row button:hover { color: var(--danger); border-color: var(--danger); }
+  .stock-wrap { margin-bottom: 8px; }
+  .match-line { font-size: 12px; min-height: 16px; color: var(--muted); padding: 3px 2px 0; line-height: 1.4; }
+  .match-ok { color: var(--accent); font-weight: 600; }
+  .match-err { color: var(--danger); }
+  .match-meta { color: var(--muted); }
+  .match-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+  .match-chip { width: auto !important; padding: 3px 9px !important; font-size: 12px; background: var(--field) !important; border: 1px solid var(--border) !important; color: var(--text) !important; border-radius: 999px !important; cursor: pointer; }
+  .match-chip:hover { border-color: var(--accent2) !important; }
+
+  /* ---- results ---- */
+  .summary-cards { display: flex; flex-wrap: wrap; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; margin-bottom: 18px; }
+  .summary-card { padding: 14px 22px; flex: 1 1 150px; border-right: 1px solid var(--border); }
+  .summary-card:last-child { border-right: none; }
+  .summary-card .label { font-size: 12px; color: var(--muted); }
+  .summary-card .value { font-size: 20px; font-weight: 600; margin-top: 2px; }
+
+  .stock-card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 18px; margin-bottom: 18px; }
+  .stock-card h3 { margin: 0 0 4px; font-size: 17px; }
+  .stock-card .meta { font-size: 12.5px; color: var(--muted); margin-bottom: 12px; line-height: 1.5; }
+  .chart-wrap { position: relative; height: 280px; margin-bottom: 10px; }
+  .chart-wrap.small { height: 140px; }
+
+  .signal-box { border: 1px solid var(--border); border-radius: 6px; padding: 12px 14px; margin-bottom: 14px; }
+  .signal-box.long { border-color: var(--accent); background: rgba(63,185,132,0.07); }
+  .signal-box.no-trade { background: rgba(133,150,166,0.05); }
+  .signal-badge { display: inline-block; font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 4px; margin-right: 8px; }
+  .signal-badge.long { background: var(--accent); color: #06251a; }
+  .signal-badge.no-trade { background: var(--border); color: var(--muted); }
+  .signal-figures { display: flex; gap: 22px; flex-wrap: wrap; margin: 10px 0 8px; }
+  .signal-figures .label { font-size: 12px; color: var(--muted); }
+  .signal-figures .value { font-size: 15px; font-weight: 600; }
+  .signal-reasons { margin: 6px 0 0; padding-left: 18px; font-size: 12px; color: var(--muted); line-height: 1.6; }
+
+  .pos { color: var(--accent); } .neg { color: var(--danger); } .warn { color: var(--warn); }
+  .badge { display: inline-block; font-size: 12px; font-weight: 600; padding: 1px 8px; border-radius: 4px; background: var(--border); color: var(--muted); }
+  .badge.target { background: rgba(63,185,132,.18); color: var(--accent); }
+  .badge.stopped { background: rgba(239,90,90,.18); color: var(--danger); }
+  .badge.expired { background: rgba(232,184,75,.15); color: var(--warn); }
+  .badge.open, .badge.pending { background: rgba(91,141,239,.18); color: var(--accent2); }
+  .caveat { font-size: 12px; color: var(--muted); line-height: 1.55; margin: 0 0 18px; max-width: 90ch; }
+  details.trades { margin-top: 10px; } details.trades summary { cursor: pointer; color: var(--muted); font-size: 13px; padding: 4px 0; }
+  td input[type=checkbox] { width: auto; }
+  td button.rm { width: auto; padding: 2px 8px; background: transparent; color: var(--muted); cursor: pointer; }
+  td button.rm:hover { color: var(--danger); border-color: var(--danger); }
+  button.linkish { margin-top: 10px; background: transparent; border: 1px solid var(--border); color: var(--text); cursor: pointer; }
+  button.linkish:hover { border-color: var(--accent2); }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">NSE MCP Dashboard<small>Bhavcopy and CM market data</small></div>
+  <nav class="tabs">
+    <div class="tab active" data-view="analysis">Portfolio analysis</div>
+    <div class="tab" data-view="eval">Evaluation</div>
+    <div class="tab" data-view="bhavcopy">Bhavcopy (EOD)</div>
+    <div class="tab" data-view="cm">CM market data</div>
+  </nav>
+</div>
+
+<section class="view" id="view-bhavcopy"></section>
+<section class="view" id="view-cm"></section>
+
+<section class="view" id="view-eval">
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="side-section">
+        <h2>Backtest</h2>
+        <label for="btSymbols">Symbols (comma separated)</label>
+        <input type="text" id="btSymbols" placeholder="e.g. TCS, INFY, RELIANCE" />
+        <label for="btMonths">History</label>
+        <select id="btMonths"><option value="12">12 months</option><option value="18">18 months</option><option value="24">24 months</option><option value="6">6 months</option></select>
+        <label for="btHold">Maximum holding period (trading days)</label>
+        <input type="number" id="btHold" value="20" min="2" max="120" />
+        <label for="btCost">Round-trip cost (%)</label>
+        <input type="number" id="btCost" value="0.2" min="0" max="5" step="0.05" />
+        <div class="hint">Replays the rule-based long setup day by day on past data. Longer history gives more trades.</div>
+        <button class="primary" id="btRun">Run backtest</button>
+        <div class="status" id="btStatus"></div>
+      </div>
+      <div class="side-section">
+        <h2>Track record</h2>
+        <div class="hint" style="margin-top:0">Every stock you get from Suggest stocks is logged here. Refresh to see whether each one hit its target, hit its stop, or is still open.</div>
+        <button class="primary" id="trRefresh">Refresh outcomes</button>
+        <div class="status" id="trStatus"></div>
+      </div>
+    </aside>
+    <div class="main">
+      <div id="trResults"></div>
+      <div id="btResults"><div class="empty">Run a backtest from the sidebar, or use Backtest these picks under Suggest stocks.</div></div>
+    </div>
+  </div>
+</section>
+
+<section class="view active" id="view-analysis">
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="side-section">
+        <h2>Capital</h2>
+        <label for="anTotalCapital">Total to allocate (₹)</label>
+        <input type="number" id="anTotalCapital" placeholder="e.g. 500000" min="0" value="500000" />
+        <div class="hint" id="anSplitHint"></div>
+      </div>
+      <div class="side-section">
+        <h2>Stocks</h2>
+        <div id="stockRows"></div>
+        <button class="secondary" id="addStockBtn">+ Add stock</button>
+        <button class="primary" id="analyzeBtn">Run analysis</button>
+        <div class="status" id="anStatus"></div>
+      </div>
+      <div id="recSlot"></div>
+    </aside>
+    <div class="main">
+      <div id="recResults"></div>
+      <div id="anResults"><div class="empty">Add your stocks in the sidebar and run the analysis.<br>Charts, signals and quantities will appear here.</div></div>
+    </div>
+  </div>
+</section>
+
+<script>
+/* ---------- shared helpers ---------- */
+function escapeHtml(str) {
+  return String(str).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+/* ---------- tab switching ---------- */
+document.querySelectorAll(".tab").forEach(tab => {
+  tab.addEventListener("click", () => {
+    document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+    document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
+    tab.classList.add("active");
+    document.getElementById("view-" + tab.dataset.view).classList.add("active");
+  });
+});
+
+/* ================= Explorer (bhavcopy / cm) ================= */
+window.toolsByServer = {};
+
+function buildExplorer(server) {
+  const root = document.getElementById("view-" + server);
+  root.innerHTML = `
+    <div class="layout">
+      <aside class="sidebar"><div class="side-section">
+        <h2>Tool</h2>
+        <label>Available tools</label>
+        <select class="toolSelect"><option>Loading…</option></select>
+        <div class="tool-desc toolDesc"></div>
+        <button type="button" class="secondary toggleSchema" style="width:auto; margin-top:6px; padding:4px 8px; font-size:11px;">Show input schema</button>
+        <pre class="schemaBox" style="display:none; margin-top:8px;"></pre>
+        <label>Arguments (JSON)</label>
+        <textarea class="argsBox">{}</textarea>
+        <button class="primary callBtn">Run</button>
+        <div class="status statusLine"></div>
+      </div></aside>
+      <div class="main"><div class="panel">
+        <h2>Result</h2>
+        <div class="resultArea"><div class="empty">Choose a tool and arguments in the sidebar, then click Run.</div></div>
+      </div></div>
+    </div>`;
+
+  const toolSelect = root.querySelector(".toolSelect");
+  const toolDesc = root.querySelector(".toolDesc");
+  const schemaBox = root.querySelector(".schemaBox");
+  const toggleSchema = root.querySelector(".toggleSchema");
+  const argsBox = root.querySelector(".argsBox");
+  const statusLine = root.querySelector(".statusLine");
+  const resultArea = root.querySelector(".resultArea");
+  const callBtn = root.querySelector(".callBtn");
+
+  let tools = [];
+
+  toggleSchema.addEventListener("click", () => {
+    const showing = schemaBox.style.display !== "none";
+    schemaBox.style.display = showing ? "none" : "block";
+    toggleSchema.textContent = showing ? "Show input schema" : "Hide input schema";
+  });
+
+  function updateToolDesc() {
+    const tool = tools.find(t => t.name === toolSelect.value);
+    if (tool) {
+      toolDesc.textContent = tool.description || "(no description provided)";
+      schemaBox.textContent = JSON.stringify(tool.input_schema || {}, null, 2);
+      schemaBox.style.display = "none";
+      toggleSchema.textContent = "Show input schema";
+      const props = tool.input_schema && tool.input_schema.properties;
+      if (props) {
+        const sample = {};
+        for (const [key, propSchema] of Object.entries(props)) {
+          const t = propSchema && propSchema.type;
+          if (t === "integer" || t === "number") sample[key] = 0;
+          else if (t === "boolean") sample[key] = false;
+          else if (t === "array") sample[key] = [];
+          else if (t === "object") sample[key] = {};
+          else sample[key] = "";
+        }
+        argsBox.value = JSON.stringify(sample, null, 2);
+      } else {
+        argsBox.value = "{}";
+      }
+    }
+  }
+  toolSelect.addEventListener("change", updateToolDesc);
+
+  async function loadTools() {
+    toolSelect.innerHTML = "<option>Loading…</option>";
+    statusLine.textContent = "";
+    statusLine.className = "status statusLine";
+    try {
+      const res = await fetch(`/api/tools?server=${encodeURIComponent(server)}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || res.statusText);
+      tools = data.tools;
+      window.toolsByServer[server] = tools;
+      if (!tools.length) { toolSelect.innerHTML = "<option>No tools found</option>"; return; }
+      toolSelect.innerHTML = tools.map(t => `<option value="${t.name}">${t.name}</option>`).join("");
+      updateToolDesc();
+      statusLine.textContent = `Connected — ${tools.length} tool(s) at ${data.url}`;
+      document.dispatchEvent(new CustomEvent("mcp-tools-loaded", { detail: { server, tools } }));
+    } catch (e) {
+      toolSelect.innerHTML = "<option>—</option>";
+      statusLine.textContent = "Connection failed: " + e.message;
+      statusLine.className = "status statusLine error";
+    }
+  }
+
+  callBtn.addEventListener("click", async () => {
+    const tool = toolSelect.value;
+    if (!tool || tool === "—" || tool === "Loading…") return;
+    let args;
+    try { args = JSON.parse(argsBox.value || "{}"); }
+    catch (e) { statusLine.textContent = "Arguments must be valid JSON"; statusLine.className = "status statusLine error"; return; }
+
+    callBtn.disabled = true;
+    statusLine.textContent = "Running…";
+    statusLine.className = "status statusLine";
+    resultArea.innerHTML = '<div class="empty">Running…</div>';
+    try {
+      const res = await fetch("/api/call", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ server, tool, arguments: args }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || res.statusText);
+      renderExplorerResult(resultArea, data.content);
+      statusLine.textContent = data.note || (data.is_error ? "Tool reported an error" : "Done");
+      statusLine.className = data.is_error ? "status statusLine error" : "status statusLine";
+    } catch (e) {
+      resultArea.innerHTML = '<div class="empty">No result</div>';
+      statusLine.textContent = "Call failed: " + e.message;
+      statusLine.className = "status statusLine error";
+    } finally { callBtn.disabled = false; }
+  });
+
+  loadTools();
+}
+
+function renderExplorerResult(resultArea, content) {
+  if (Array.isArray(content) && content.length && content.every(row => row && typeof row === "object" && !Array.isArray(row))) {
+    const cols = [...new Set(content.flatMap(row => Object.keys(row)))];
+    const thead = `<tr>${cols.map(c => `<th>${c}</th>`).join("")}</tr>`;
+    const rows = content.map(row => `<tr>${cols.map(c => `<td>${row[c] ?? ""}</td>`).join("")}</tr>`).join("");
+    resultArea.innerHTML = `<div class="result-scroll"><table><thead>${thead}</thead><tbody>${rows}</tbody></table></div>`;
+  } else {
+    resultArea.innerHTML = `<pre>${escapeHtml(JSON.stringify(content, null, 2))}</pre>`;
+  }
+}
+
+buildExplorer("bhavcopy");
+buildExplorer("cm");
+
+/* ================= Portfolio Analysis ================= */
+const anTotalCapital = document.getElementById("anTotalCapital");
+const anSplitHint = document.getElementById("anSplitHint");
+const stockRows = document.getElementById("stockRows");
+const addStockBtn = document.getElementById("addStockBtn");
+const analyzeBtn = document.getElementById("analyzeBtn");
+const anStatus = document.getElementById("anStatus");
+const anResults = document.getElementById("anResults");
+
+const chartInstances = [];
+
+function currentStockCount() {
+  return [...stockRows.querySelectorAll(".stockSymbol")].filter(i => i.value.trim()).length;
+}
+
+function updateSplitHint() {
+  const total = parseFloat(anTotalCapital.value) || 0;
+  const n = currentStockCount();
+  if (!n) { anSplitHint.textContent = "Add stocks below — capital splits equally across them."; return; }
+  const each = total / n;
+  anSplitHint.textContent = `Splits equally across ${n} stock${n > 1 ? "s" : ""}: ₹${each.toLocaleString("en-IN", { maximumFractionDigits: 0 })} each.`;
+}
+anTotalCapital.addEventListener("input", updateSplitHint);
+
+function setResolved(input, matchBox, r) {
+  input.dataset.resolved = r.symbol;
+  const chg = r.pct_change > 0 ? "+" + r.pct_change : r.pct_change;
+  matchBox.innerHTML = `<span class="match-ok">✓ ${escapeHtml(r.symbol)}</span> <span class="match-meta">₹${r.last_close} (${chg}%)</span>`;
+  updateSplitHint();
+}
+
+async function lookupSymbol(input, matchBox) {
+  const q = input.value.trim();
+  delete input.dataset.resolved;
+  if (!q) { matchBox.textContent = ""; return; }
+  matchBox.innerHTML = `<span class="match-meta">Searching…</span>`;
+  try {
+    const res = await fetch(`/api/search?query=${encodeURIComponent(q)}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || res.statusText);
+    if (input.value.trim() !== q) return; // user kept typing; ignore stale response
+    const results = data.results;
+    if (!results.length) {
+      matchBox.innerHTML = `<span class="match-err">No active NSE symbol found for “${escapeHtml(q)}”. Search matches ticker text, so try the ticker or a shorter keyword (e.g. INFY rather than Infosys).</span>`;
+      return;
+    }
+    const exact = results.find(r => r.symbol === q.toUpperCase().replace(/\s+/g, ""));
+    if (exact || results.length === 1) { setResolved(input, matchBox, exact || results[0]); return; }
+    matchBox.innerHTML = `<div class="match-meta">${results.length} matches — pick one:</div><div class="match-list"></div>`;
+    const list = matchBox.querySelector(".match-list");
+    results.forEach(r => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "match-chip";
+      b.textContent = `${r.symbol} · ₹${r.last_close}`;
+      b.addEventListener("click", () => { input.value = r.symbol; setResolved(input, matchBox, r); });
+      list.appendChild(b);
+    });
+  } catch (e) {
+    matchBox.innerHTML = `<span class="match-err">${escapeHtml(e.message)}</span>`;
+  }
+}
+
+function addStockRow(name = "") {
+  const wrap = document.createElement("div");
+  wrap.className = "stock-wrap";
+  wrap.innerHTML = `
+    <div class="stock-row">
+      <input type="text" class="stockSymbol" placeholder="Name or symbol, e.g. Reliance" value="${escapeHtml(name)}" />
+      <button class="removeRow" title="Remove">✕</button>
+    </div>
+    <div class="match-line"></div>`;
+  const input = wrap.querySelector(".stockSymbol");
+  const matchBox = wrap.querySelector(".match-line");
+  let timer;
+  input.addEventListener("input", () => {
+    delete input.dataset.resolved;
+    updateSplitHint();
+    clearTimeout(timer);
+    timer = setTimeout(() => lookupSymbol(input, matchBox), 450);
+  });
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter") { clearTimeout(timer); lookupSymbol(input, matchBox); } });
+  wrap.querySelector(".removeRow").addEventListener("click", () => { wrap.remove(); updateSplitHint(); });
+  stockRows.appendChild(wrap);
+  updateSplitHint();
+}
+addStockBtn.addEventListener("click", () => addStockRow());
+["", "", "", "", ""].forEach(s => addStockRow(s));
+
+analyzeBtn.addEventListener("click", async () => {
+  // Make sure every typed name has been resolved to an NSE symbol first.
+  const inputs = [...stockRows.querySelectorAll(".stockSymbol")].filter(i => i.value.trim());
+  if (!inputs.length) { anStatus.textContent = "Add at least one stock name or symbol."; anStatus.className = "status error"; return; }
+
+  anStatus.textContent = "Resolving symbols…";
+  anStatus.className = "status";
+  await Promise.all(inputs.filter(i => !i.dataset.resolved).map(i => lookupSymbol(i, i.closest(".stock-wrap").querySelector(".match-line"))));
+
+  const unresolved = inputs.filter(i => !i.dataset.resolved).map(i => i.value.trim());
+  if (unresolved.length) {
+    anStatus.textContent = `Pick or fix a symbol for: ${unresolved.join(", ")}`;
+    anStatus.className = "status error";
+    return;
+  }
+
+  const symbols = [...new Set(inputs.map(i => i.dataset.resolved))];
+  const totalCapital = parseFloat(anTotalCapital.value) || 0;
+  const perStock = symbols.length ? totalCapital / symbols.length : 0;
+  const stocks = symbols.map(symbol => ({ symbol, allocation: perStock }));
+
+  const payload = { stocks };
+
+  analyzeBtn.disabled = true;
+  anStatus.textContent = "Fetching data and computing indicators…";
+  anStatus.className = "status";
+  anResults.innerHTML = "";
+  chartInstances.forEach(c => c.destroy());
+  chartInstances.length = 0;
+
+  try {
+    const res = await fetch("/api/analyze", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || res.statusText);
+    renderAnalysis(data.results);
+    window.lastResults = data.results;
+    renderRecommendPanel();
+    anStatus.textContent = "Done";
+  } catch (e) {
+    anStatus.textContent = "Analysis failed: " + e.message;
+    anStatus.className = "status error";
+  } finally {
+    analyzeBtn.disabled = false;
+  }
+});
+
+
+/* ---------- Suggestions (recommend.py) ---------- */
+function renderRecommendPanel() {
+  const ok = (window.lastResults || []).filter(r => !r.error);
+  document.getElementById("recPanel")?.remove();
+  const panel = document.createElement("div");
+  panel.className = "side-section";
+  panel.id = "recPanel";
+  panel.innerHTML = `<h2>Suggestions</h2>
+    <label>Extra budget to deploy (₹)</label>
+    <input type="number" class="recBudget" min="0" value="100000" />
+    <div class="hint">${ok.length ? `Using your ${ok.length} analysed stock(s) to avoid overlap.` : "No analysed holdings yet, so correlation with your portfolio is skipped. Run an analysis first for a better ranking."}</div>
+    <div class="hint">Scans the 30 most-traded NSE names for LONG setups, ranks by rule score and low correlation with your holdings. Mechanical screen only, not advice.</div>
+    <button class="primary recBtn">Suggest stocks</button>
+    <div class="status recStatus"></div>`;
+  document.getElementById("recSlot").appendChild(panel);
+  const recResults = document.getElementById("recResults");
+  recResults.innerHTML = "";
+  const btn = panel.querySelector(".recBtn"), st = panel.querySelector(".recStatus"), out = recResults;
+  btn.addEventListener("click", async () => {
+    btn.disabled = true; st.className = "status recStatus"; st.textContent = "Scanning… this can take a minute."; out.innerHTML = "";
+    try {
+      const existing = ok.map(r => ({ symbol: r.symbol, dates: r.dates, close: r.close }));
+      const res = await fetch("/api/recommend", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ budget: parseFloat(panel.querySelector(".recBudget").value) || 0, existing }) });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.detail || res.statusText);
+      st.textContent = `Scanned ${d.scanned}, ${d.longs_found} long setup(s).` + (d.note ? " " + d.note : "");
+      if (d.picks.length) out.innerHTML = `<div class="panel"><h2>Suggested additions</h2><div class="result-scroll"><table><thead><tr><th>Symbol</th><th>Score</th><th>RSI</th><th>Corr. to portfolio</th><th>Entry</th><th>Stop</th><th>Target</th><th>Qty</th><th>Invested</th></tr></thead><tbody>${d.picks.map(p => `<tr><td>${escapeHtml(p.symbol)}</td><td>${p.score}</td><td>${p.rsi}</td><td>${p.correlation ?? "—"}</td><td>₹${p.entry}</td><td>₹${p.stop_loss}</td><td>₹${p.target}</td><td>${p.quantity}</td><td>₹${p.invested.toLocaleString("en-IN")}</td></tr>`).join("")}</tbody></table></div><button class="linkish btPicks" style="width:auto;padding:8px 14px">Backtest these picks</button><div class="hint">Logged to Evaluation &gt; Track record so you can check how they actually play out.</div></div>`;
+      out.querySelector(".btPicks")?.addEventListener("click", () => {
+        document.getElementById("btSymbols").value = d.picks.map(p => p.symbol).join(", ");
+        document.querySelector('.tab[data-view="eval"]').click();
+        runBacktest();
+      });
+    } catch (e) { st.textContent = "Failed: " + e.message; st.className = "status recStatus error"; }
+    finally { btn.disabled = false; }
+  });
+}
+
+function fmtDate(iso) {
+  const d = new Date(String(iso).slice(0, 10) + "T00:00:00");
+  return isNaN(d) ? escapeHtml(iso ?? "—") : d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+}
+function ltpDateHtml(r) {
+  if (!r.ltp_date) return "—";
+  const stale = r.ltp_age_days != null && r.ltp_age_days > 3;
+  const note = stale ? ` <span style="color:#e8b84b" title="Latest data on file is ${r.ltp_age_days} days old">(${r.ltp_age_days}d old)</span>` : "";
+  return fmtDate(r.ltp_date) + note;
+}
+
+function renderCaNotes(r) {
+  if (r.ca_status === "unavailable")
+    return `<div class="hint" style="color:#e8b84b;margin-bottom:8px">Corporate actions could not be fetched, so prices are unchecked for splits/bonuses.</div>`;
+  const notes = r.ca_notes || [];
+  if (!notes.length) return `<div class="hint" style="margin-bottom:8px">No corporate actions in this window.</div>`;
+  const items = notes.map(n => {
+    const tag = n.adjusted ? `<b style="color:#e8b84b">${escapeHtml(n.type)} - prices before this date adjusted (factor ${n.factor})</b>` : `${escapeHtml(n.type)} - no price adjustment`;
+    return `<li>${fmtDate(n.exDate)}: ${tag}${n.purpose ? " &middot; " + escapeHtml(n.purpose) : ""}</li>`;
+  }).join("");
+  const adj = notes.some(n => n.adjusted) ? `<div class="hint" style="color:#e8b84b">Server MA20/MA50 above are unadjusted and may differ from the chart SMAs.</div>` : "";
+  return `<div class="hint" style="margin-bottom:8px">Corporate actions (ex-date in window):<ul class="signal-reasons">${items}</ul>${adj}</div>`;
+}
+
+function renderSignal(sig) {
+  if (!sig) return "";
+  const reasons = (sig.reasons || []).map(r => `<li>${escapeHtml(r)}</li>`).join("");
+  if (sig.signal === "LONG") {
+    return `<div class="signal-box long">
+      <span class="signal-badge long">LONG SETUP</span><span style="font-size:12px;color:var(--muted)">Rule score ${sig.score}</span>
+      <div class="signal-figures">
+        <div><div class="label">Entry</div><div class="value">₹${sig.entry}</div></div>
+        <div><div class="label">Stop loss</div><div class="value" style="color:var(--danger)">₹${sig.stop_loss}</div></div>
+        <div><div class="label">Target</div><div class="value" style="color:var(--accent)">₹${sig.target}</div></div>
+        <div><div class="label">Risk / share</div><div class="value">₹${sig.risk_per_share}</div></div>
+        <div><div class="label">Reward : Risk</div><div class="value">${sig.reward_risk_ratio}</div></div>
+      </div>
+      <ul class="signal-reasons">${reasons}</ul>
+    </div>`;
+  }
+  return `<div class="signal-box no-trade">
+    <span class="signal-badge no-trade">NO TRADE</span><span style="font-size:12px;color:var(--muted)">${sig.score ? "Rule score " + sig.score + " — setup not supported" : "Insufficient data"}</span>
+    <ul class="signal-reasons">${reasons}</ul>
+  </div>`;
+}
+
+function renderAnalysis(results) {
+  const ok = results.filter(r => !r.error);
+  const totalAlloc = results.reduce((s, r) => s + (r.allocation || 0), 0);
+  const totalInvested = ok.reduce((s, r) => s + (r.invested || 0), 0);
+
+  let html = `<div class="summary-cards">
+    <div class="summary-card"><div class="label">Total allocated</div><div class="value">₹${totalAlloc.toLocaleString("en-IN")}</div></div>
+    <div class="summary-card"><div class="label">Total invested</div><div class="value">₹${totalInvested.toLocaleString("en-IN")}</div></div>
+    <div class="summary-card"><div class="label">Stocks analysed</div><div class="value">${ok.length}/${results.length}</div></div>
+  </div>`;
+
+  html += `<div class="panel"><h2>Summary</h2><div class="result-scroll"><table>
+    <thead><tr><th>Symbol</th><th>Allocated</th><th>LTP</th><th>LTP date</th><th>Qty</th><th>Invested</th><th>Leftover</th><th>Signal</th><th>Entry</th><th>Stop loss</th><th>Target</th></tr></thead>
+    <tbody>${results.map(r => r.error
+      ? `<tr><td>${escapeHtml(r.symbol)}</td><td colspan="10" style="color:var(--danger)">${escapeHtml(r.error)}</td></tr>`
+      : `<tr><td>${escapeHtml(r.symbol)}${(r.corporate_adjustments||[]).length ? ' <span title="Split/bonus adjusted" style="color:#e8b84b">CA</span>' : ''}</td><td>₹${(r.allocation||0).toLocaleString("en-IN")}</td><td>${r.latest_price ?? "—"}</td><td>${ltpDateHtml(r)}</td><td>${r.quantity ?? "—"}</td><td>₹${(r.invested||0).toLocaleString("en-IN")}</td><td>₹${(r.leftover||0).toLocaleString("en-IN")}</td>
+          <td>${r.trade_signal?.signal === "LONG" ? "<b style='color:var(--accent)'>LONG</b>" : "<span style='color:var(--muted)'>No trade</span>"}</td>
+          <td>${r.trade_signal?.entry ?? "—"}</td><td>${r.trade_signal?.stop_loss ?? "—"}</td><td>${r.trade_signal?.target ?? "—"}</td></tr>`
+    ).join("")}</tbody>
+  </table></div></div>`;
+
+  html += `<div class="hint" style="margin-bottom:16px">Signals are a simple rule-based heuristic (SMA trend + MACD + RSI zone) for informational purposes only — not investment advice or a recommendation. Long setups only; it defaults to No trade when the checks don't line up. Data via NSE MCP is for informational and educational use.</div>`;
+  anResults.innerHTML = html;
+
+  ok.forEach(r => {
+    const card = document.createElement("div");
+    card.className = "stock-card";
+    card.innerHTML = `
+      <h3>${escapeHtml(r.symbol)}</h3>
+      <div class="meta">LTP ₹${r.latest_price} as of ${ltpDateHtml(r)} · MA20 ₹${r.moving_average_20 ?? "—"} · MA50 ₹${r.moving_average_50 ?? "—"} · Qty ${r.quantity ?? "—"} · Invested ₹${(r.invested||0).toLocaleString("en-IN")} · Leftover ₹${(r.leftover||0).toLocaleString("en-IN")}</div>
+      ${renderCaNotes(r)}
+      ${renderSignal(r.trade_signal)}
+      <div class="chart-wrap"><canvas></canvas></div>
+      <div class="chart-wrap small"><canvas></canvas></div>`;
+    anResults.appendChild(card);
+
+    const [priceCanvas, rsiCanvas] = card.querySelectorAll("canvas");
+
+    chartInstances.push(new Chart(priceCanvas, {
+      type: "line",
+      data: {
+        labels: r.dates,
+        datasets: [
+          { label: "Close", data: r.close, borderColor: "#4f8cff", pointRadius: 0, borderWidth: 1.5, tension: 0.1 },
+          { label: "SMA20", data: r.sma20, borderColor: "#3fb984", pointRadius: 0, borderWidth: 1.5, tension: 0.1 },
+          { label: "SMA50", data: r.sma50, borderColor: "#e8b84b", pointRadius: 0, borderWidth: 1.5, tension: 0.1 },
+        ],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        interaction: { mode: "index", intersect: false },
+        plugins: { legend: { labels: { color: "#e6edf3", boxWidth: 12 } } },
+        scales: {
+          x: { ticks: { color: "#8b98a5", maxTicksLimit: 8 }, grid: { color: "#263544" } },
+          y: { ticks: { color: "#8b98a5" }, grid: { color: "#263544" } },
+        },
+      },
+    }));
+
+    chartInstances.push(new Chart(rsiCanvas, {
+      type: "line",
+      data: { labels: r.dates, datasets: [{ label: "RSI(14)", data: r.rsi, borderColor: "#c979e0", pointRadius: 0, borderWidth: 1.5, tension: 0.1 }] },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { labels: { color: "#e6edf3", boxWidth: 12 } } },
+        scales: {
+          x: { ticks: { color: "#8b98a5", maxTicksLimit: 8 }, grid: { color: "#263544" } },
+          y: { min: 0, max: 100, ticks: { color: "#8b98a5" }, grid: { color: "#263544" } },
+        },
+      },
+    }));
+  });
+
+  if (!ok.length) {
+    anResults.innerHTML += '<div class="empty">No stock came back with usable data — check the errors in the summary table above.</div>';
+  }
+}
+
+/* ================= Evaluation: backtest + track record ================= */
+const btCharts = [];
+const pct = v => v == null ? "—" : `<span class="${v > 0 ? "pos" : v < 0 ? "neg" : ""}">${v > 0 ? "+" : ""}${v}%</span>`;
+const num = v => v == null ? "—" : v;
+
+document.getElementById("btRun").addEventListener("click", () => runBacktest());
+document.getElementById("trRefresh").addEventListener("click", () => loadTrack());
+let trackLoaded = false;
+document.querySelector('.tab[data-view="eval"]').addEventListener("click", () => { if (!trackLoaded) { trackLoaded = true; loadTrack(); } });
+
+async function runBacktest() {
+  const st = document.getElementById("btStatus"), btn = document.getElementById("btRun"), out = document.getElementById("btResults");
+  const symbols = document.getElementById("btSymbols").value.split(/[,\s]+/).map(s => s.trim().toUpperCase()).filter(Boolean);
+  if (!symbols.length) { st.textContent = "Enter at least one NSE symbol."; st.className = "status error"; return; }
+  btn.disabled = true; st.className = "status"; st.textContent = "Fetching history and replaying trades… this can take a minute.";
+  btCharts.forEach(c => c.destroy()); btCharts.length = 0;
+  out.innerHTML = '<div class="empty">Running backtest…</div>';
+  try {
+    const res = await fetch("/api/backtest", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
+      symbols, months: +document.getElementById("btMonths").value,
+      max_hold: +document.getElementById("btHold").value || 20, cost_pct: parseFloat(document.getElementById("btCost").value) || 0 }) });
+    const d = await res.json();
+    if (!res.ok) throw new Error(d.detail || res.statusText);
+    renderBacktest(d, out); st.textContent = "Done";
+  } catch (e) { out.innerHTML = '<div class="empty">No result</div>'; st.textContent = "Backtest failed: " + e.message; st.className = "status error"; }
+  finally { btn.disabled = false; }
+}
+
+function renderBacktest(d, out) {
+  const p = d.pooled, ok = d.results.filter(r => !r.error);
+  let html = `<h2 style="margin-bottom:10px">Backtest</h2>`;
+  if (p) {
+    html += `<div class="summary-cards">
+      <div class="summary-card"><div class="label">Trades</div><div class="value">${p.trades}</div></div>
+      <div class="summary-card"><div class="label">Win rate</div><div class="value">${p.win_rate ?? "—"}${p.win_rate != null ? "%" : ""}</div></div>
+      <div class="summary-card"><div class="label">Average per trade</div><div class="value">${pct(p.avg_return_pct)}</div></div>
+      <div class="summary-card"><div class="label">Profit factor</div><div class="value">${num(p.profit_factor)}</div></div>
+      <div class="summary-card"><div class="label">Strategy vs buy and hold</div><div class="value">${pct(p.avg_strategy_return_pct)} <span style="font-size:13px;color:var(--muted)">vs</span> ${pct(p.avg_buy_hold_return_pct)}</div></div>
+    </div>`;
+    if (p.small_sample) html += `<p class="caveat warn">Only ${p.trades} closed trades. That is too few to say whether the rules have an edge, so treat these numbers as a first look.</p>`;
+  }
+  html += `<p class="caveat">Setup: ${d.params.months} months of history, max ${d.params.max_hold} trading days per trade, ${d.params.cost_pct}% round-trip cost. Trades enter at the signal day's close, exit at the stop, target, or time limit, and never overlap. If a day touches both stop and target, the stop counts. Prices are adjusted for splits and bonuses. The stocks were picked because they look strong today, so a backtest on them flatters the rules. The Track record below is the fair test.</p>`;
+  html += `<div class="panel"><h2>By stock</h2><div class="result-scroll"><table><thead><tr><th>Symbol</th><th>Trades</th><th>Win rate</th><th>Avg per trade</th><th>Strategy</th><th>Buy and hold</th><th>Max drawdown</th><th>In market</th><th>Target / stop / time</th></tr></thead><tbody>${
+    d.results.map(r => r.error ? `<tr><td>${escapeHtml(r.symbol)}</td><td colspan="8" style="text-align:left;color:var(--danger)">${escapeHtml(r.error)}</td></tr>`
+      : `<tr><td>${escapeHtml(r.symbol)}</td><td>${r.metrics.trades}${r.metrics.open_trades ? " +1 open" : ""}</td><td>${r.metrics.win_rate ?? "—"}${r.metrics.win_rate != null ? "%" : ""}</td><td>${pct(r.metrics.avg_return_pct)}</td><td>${pct(r.metrics.strategy_return_pct)}</td><td>${pct(r.metrics.buy_hold_return_pct)}</td><td>${r.metrics.max_drawdown_pct}%</td><td>${r.metrics.exposure_pct}%</td><td>${r.metrics.target_hits} / ${r.metrics.stop_hits} / ${r.metrics.time_exits}</td></tr>`).join("")}</tbody></table></div></div>`;
+  out.innerHTML = html;
+
+  ok.forEach(r => {
+    const card = document.createElement("div");
+    card.className = "stock-card";
+    card.innerHTML = `<h3>${escapeHtml(r.symbol)}</h3>
+      <div class="meta">Growth of 1 from ${fmtDate(r.dates[0])} to ${fmtDate(r.dates[r.dates.length - 1])}, strategy against buy and hold</div>
+      <div class="chart-wrap"><canvas></canvas></div>
+      <details class="trades"><summary>${r.trades.length} trade${r.trades.length === 1 ? "" : "s"}</summary>
+      ${r.trades.length ? `<div class="result-scroll"><table><thead><tr><th>Entry date</th><th>Entry</th><th>Stop</th><th>Target</th><th>Exit date</th><th>Exit</th><th>Result</th><th>Days</th><th>Net return</th></tr></thead><tbody>${r.trades.map(t => `<tr><td>${fmtDate(t.entry_date)}</td><td>₹${t.entry}</td><td>₹${t.stop}</td><td>₹${t.target}</td><td>${fmtDate(t.exit_date)}</td><td>₹${t.exit}</td><td><span class="badge ${t.reason === "target" ? "target" : t.reason === "stop" ? "stopped" : t.reason === "time" ? "expired" : "open"}">${t.reason === "time" ? "time limit" : t.reason}</span></td><td>${t.bars}</td><td>${pct(t.ret_pct)}</td></tr>`).join("")}</tbody></table></div>` : '<div class="hint">No setups triggered in this period.</div>'}</details>`;
+    out.appendChild(card);
+    btCharts.push(new Chart(card.querySelector("canvas"), { type: "line",
+      data: { labels: r.dates, datasets: [
+        { label: "Strategy", data: r.equity, borderColor: "#5b8def", pointRadius: 0, borderWidth: 1.8, stepped: false },
+        { label: "Buy and hold", data: r.buy_hold, borderColor: "#8596a6", pointRadius: 0, borderWidth: 1.3, borderDash: [5, 4] }] },
+      options: { responsive: true, maintainAspectRatio: false, interaction: { mode: "index", intersect: false },
+        plugins: { legend: { labels: { color: "#e4ebf2", boxWidth: 12 } } },
+        scales: { x: { ticks: { color: "#8596a6", maxTicksLimit: 8 }, grid: { color: "#233242" } }, y: { ticks: { color: "#8596a6" }, grid: { color: "#233242" } } } } }));
+  });
+}
+
+async function loadTrack() {
+  const st = document.getElementById("trStatus"), btn = document.getElementById("trRefresh"), out = document.getElementById("trResults");
+  btn.disabled = true; st.className = "status"; st.textContent = "Checking outcomes…";
+  try {
+    const res = await fetch(`/api/track?max_hold=${+document.getElementById("btHold").value || 20}&cost_pct=${parseFloat(document.getElementById("btCost").value) || 0}`);
+    const d = await res.json();
+    if (!res.ok) throw new Error(d.detail || res.statusText);
+    renderTrack(d, out); st.textContent = "Updated " + new Date().toLocaleTimeString("en-IN");
+  } catch (e) { st.textContent = "Could not load track record: " + e.message; st.className = "status error"; }
+  finally { btn.disabled = false; }
+}
+
+function summaryStrip(s, title) {
+  return `<div class="summary-cards" title="${escapeHtml(title)}">
+    <div class="summary-card"><div class="label">${escapeHtml(title)}</div><div class="value">${s.logged}</div></div>
+    <div class="summary-card"><div class="label">Hit target</div><div class="value">${s.target}</div></div>
+    <div class="summary-card"><div class="label">Hit stop</div><div class="value">${s.stopped}</div></div>
+    <div class="summary-card"><div class="label">Still open</div><div class="value">${s.open}</div></div>
+    <div class="summary-card"><div class="label">Win rate (finished)</div><div class="value">${s.win_rate ?? "—"}${s.win_rate != null ? "%" : ""}</div></div>
+    <div class="summary-card"><div class="label">Avg return (finished)</div><div class="value">${pct(s.avg_return_pct)}</div></div>
+  </div>`;
+}
+
+function renderTrack(d, out) {
+  if (!d.entries.length) { out.innerHTML = `<div class="panel"><h2>Track record</h2><div class="empty" style="padding:24px">Nothing logged yet. Stocks from Suggest stocks will appear here automatically.</div></div>`; return; }
+  let html = `<h2 style="margin-bottom:10px">Track record</h2>` + summaryStrip(d.summary, "Suggestions logged");
+  if (d.summary.small_sample) html += `<p class="caveat warn">Only ${d.summary.resolved} suggestion${d.summary.resolved === 1 ? " has" : "s have"} finished so far. Keep logging before drawing conclusions.</p>`;
+  if (d.taken_summary) html += `<h2 style="margin:4px 0 10px">Ones you took</h2>` + summaryStrip(d.taken_summary, "Taken");
+  html += `<p class="caveat">Each suggestion is followed from the day it was made: it finishes when price hits the stop or target, or after the holding limit (set in the Backtest section). Returns are net of the cost you set. Tick "Taken" for trades you actually placed, so you can compare them with the full list.</p>`;
+  html += `<div class="panel"><div class="result-scroll"><table><thead><tr><th>Suggested</th><th>Symbol</th><th>Entry</th><th>Stop</th><th>Target</th><th>Status</th><th>Exit or current</th><th>Return</th><th>Days</th><th>Taken</th><th></th></tr></thead><tbody>${
+    d.entries.map(r => {
+      const label = { target: "Target hit", stopped: "Stopped out", expired: "Time limit", open: "Open", pending: "No data yet", no_data: "No data" }[r.status] || r.status;
+      const px = r.exit_price ?? r.current_price;
+      return `<tr><td>${fmtDate(r.as_of)}</td><td>${escapeHtml(r.symbol)}</td><td>₹${r.entry}</td><td>₹${r.stop_loss}</td><td>₹${r.target}</td>
+        <td><span class="badge ${r.status}" ${r.error ? `title="${escapeHtml(r.error)}"` : ""}>${label}</span></td>
+        <td>${px != null ? "₹" + px : "—"}${r.exit_date ? ` <span style="color:var(--muted)">${fmtDate(r.exit_date)}</span>` : ""}</td>
+        <td>${pct(r.return_pct)}</td><td>${r.bars ?? "—"}</td>
+        <td><input type="checkbox" class="takenBox" data-id="${r.id}" ${r.taken ? "checked" : ""} aria-label="Taken"></td>
+        <td><button class="rm" data-id="${r.id}" title="Remove from log" aria-label="Remove">✕</button></td></tr>`;
+    }).join("")}</tbody></table></div></div>`;
+  out.innerHTML = html;
+  out.querySelectorAll(".takenBox").forEach(b => b.addEventListener("change", async () => {
+    await fetch(`/api/track/${b.dataset.id}/taken`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ taken: b.checked }) });
+    loadTrack();
+  }));
+  out.querySelectorAll(".rm").forEach(b => b.addEventListener("click", async () => {
+    await fetch(`/api/track/${b.dataset.id}`, { method: "DELETE" });
+    loadTrack();
+  }));
+}
+
+renderRecommendPanel();
+</script>
+
+</body>
+</html>
